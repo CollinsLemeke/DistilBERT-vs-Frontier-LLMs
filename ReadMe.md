@@ -653,12 +653,10 @@ The MHARD dataset should be cited as:
 
 **Collins Lemeke**  
 MSc Artificial Intelligence, University of Greater Manchester  
-Centre for Intelligence of Things (CIoTh)
+AI Research @ Centre for Intelligence of Things (CIoTh)
 Co-founder, AI Nexus Society @ UGM  
 IEEE Member
 
 📧 For questions about this work, feel free to open an issue or reach out via GitHub.
 
 ---
-
-> *This project is part of the NetZeroNLP research thread, investigating carbon-efficient NLP through model distillation and task-specific fine-tuning. Related work includes the accepted IEEE-affiliated ICNDSA 2026 paper "Towards Cognitive-Efficient Psycho-Intelligence: Evaluating Lightweight NLP Models for Affective State Recognition."*
