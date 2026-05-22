@@ -1,4 +1,4 @@
-# Reducing AI Carbon Footprint: A Study of DistilBERT for Mental Health Sentiment Analysis
+# Carbon Aware Sentiment Analysis at Scale
 
 > **Can a 66M-parameter fine-tuned model match frontier LLMs on mental health app review classification — at a fraction of the carbon cost?**
 
