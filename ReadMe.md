@@ -1,14 +1,17 @@
 # Carbon Aware Sentiment Analysis at Scale
 
-> **Can a 66M-parameter fine-tuned model match frontier LLMs on mental health app review classification — at a fraction of the carbon cost?**
+> **Can a 67M-parameter fine-tuned model match frontier LLMs on mental health app review classification — at a fraction of the carbon cost?**
+>
+> **Short answer: on macro F1 it beats five of the seven, including GPT-4, for 13.3 grams of CO₂ and five and a half minutes of training.**
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.x-orange)](https://pytorch.org/)
 [![HuggingFace](https://img.shields.io/badge/🤗-Transformers-yellow)](https://huggingface.co/transformers)
 [![CodeCarbon](https://img.shields.io/badge/🌱-CodeCarbon-green)](https://codecarbon.io/)
-[![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
-[![Dataset](https://img.shields.io/badge/Dataset-MHARD%20200k%2B-blueviolet)](https://huggingface.co/datasets)
-[![Platform](https://img.shields.io/badge/Platform-Google%20Colab-F9AB00)](https://colab.research.google.com/)
+[![Task B Accuracy](https://img.shields.io/badge/3--class%20Accuracy-88.35%25-success)](#results)
+[![Macro F1](https://img.shields.io/badge/3--class%20Macro%20F1-0.734%20(2nd%20of%208)-success)](#the-ranking-flips-depending-on-the-metric)
+[![Training CO2](https://img.shields.io/badge/Training%20CO₂-13.3%20g-brightgreen)](#carbon-efficiency-analysis)
+[![License](https://img.shields.io/badge/Code-MIT-lightgrey)](LICENSE)
 
 ---
 
@@ -16,425 +19,156 @@
 
 - [Overview](#overview)
 - [Motivation and Research Question](#motivation-and-research-question)
+- [Headline Results](#headline-results)
 - [Dataset: MHARD](#dataset-mhard)
 - [Experimental Design](#experimental-design)
 - [Project Architecture and Pipeline](#project-architecture-and-pipeline)
-  - [Step 1 – Environment Setup](#step-1--environment-setup)
-  - [Step 2 – Imports, Seeds, and Device Check](#step-2--imports-seeds-and-device-check)
-  - [Step 3 – Load the MHARD Dataset](#step-3--load-the-mhard-dataset)
-  - [Step 4 – Missing Value Analysis](#step-4--missing-value-analysis)
-  - [Step 5 – Rating Distribution and Class Imbalance](#step-5--rating-distribution-and-class-imbalance)
-  - [Step 6 – Review Length Analysis and max_length Decision](#step-6--review-length-analysis-and-max_length-decision)
-  - [Step 7 – Data Cleaning Implementation](#step-7--data-cleaning-implementation)
-  - [Step 8 – Word Clouds and LLM Agreement Preview](#step-8--word-clouds-and-llm-agreement-preview)
-  - [Step 9 – Label Encoding for Both Tasks](#step-9--label-encoding-for-both-tasks)
-  - [Step 10 – Stratified 80/10/10 Split](#step-10--stratified-801010-split)
-  - [Step 11 – Tokenization with DistilBERT](#step-11--tokenization-with-distilbert)
-  - [Step 12 – Model Architecture, Weighted Loss, and Metrics](#step-12--model-architecture-weighted-loss-and-metrics)
-  - [Step 13 – Task A Training (5-class, 3 Epochs)](#step-13--task-a-training-5-class-3-epochs)
-  - [Step 14 – Task A Test Evaluation](#step-14--task-a-test-evaluation)
-  - [Step 15 – Task B Training (3-class, 2 Epochs)](#step-15--task-b-training-3-class-2-epochs)
-  - [Step 16 – Task B Test Evaluation](#step-16--task-b-test-evaluation)
-  - [Step 17 – LLM Baseline Comparison](#step-17--llm-baseline-comparison)
 - [Key Design Decisions and Justifications](#key-design-decisions-and-justifications)
-- [Results and Findings](#results-and-findings)
+- [Results](#results)
+  - [Head to Head, Task A](#head-to-head-task-a--5-class-rating)
+  - [Head to Head, Task B](#head-to-head-task-b--3-class-sentiment)
+  - [The Ranking Flips Depending on the Metric](#the-ranking-flips-depending-on-the-metric)
+  - [Per-Class Performance](#per-class-performance)
+  - [Where It Fails](#where-it-fails)
 - [Carbon Efficiency Analysis](#carbon-efficiency-analysis)
+- [Limitations](#limitations)
 - [How to Reproduce](#how-to-reproduce)
 - [Repository Structure](#repository-structure)
 - [Dependencies](#dependencies)
 - [Citation](#citation)
 - [Author](#author)
+- [License](#license)
 
 ---
 
 ## Overview
 
-This project fine-tunes **DistilBERT** (`distilbert-base-uncased`, 66M parameters) for automated sentiment analysis of mental health app reviews, and benchmarks it against **seven frontier Large Language Models (LLMs)** whose predictions come bundled in the MHARD dataset. The models benchmarked are: GPT-3.5 Instruct, GPT-3.5 Turbo, GPT-4, Gemini 1.5 Flash, Gemini 1.5 Pro, LLaMA 3.1 8B, and LLaMA 3.3 70B.
+This project fine-tunes **DistilBERT** (`distilbert-base-uncased`, 66,955,779 parameters) for automated sentiment analysis of mental health app reviews, and benchmarks it against **seven frontier Large Language Models** whose predictions come bundled in the MHARD dataset: GPT-3.5 Instruct, GPT-3.5 Turbo, GPT-4, Gemini 1.5 Flash, Gemini 1.5 Pro, LLaMA 3.1 8B, and LLaMA 3.3 70B.
 
-The work trains two classification heads from the same `distilbert-base-uncased` encoder:
+Two classification heads are trained from the same encoder:
 
 - **Task A** — 5-class ordinal rating prediction (predict the exact 1–5 star rating)
 - **Task B** — 3-class sentiment classification (negative / neutral / positive)
 
-Carbon emissions during both training and inference are measured using **CodeCarbon**, enabling a concrete, quantitative argument about the environmental cost-efficiency of small fine-tuned models versus large general-purpose LLMs.
+Carbon emissions during both training and inference are measured with **CodeCarbon**, which turns the environmental argument from a claim into a measurement.
 
-This notebook constitutes the empirical core of the MSc dissertation *"Reducing AI Carbon Footprint: A Study of DistilBERT for Mental Health Sentiment Analysis"* and extends the **NetZeroNLP** research narrative to a real-world application domain.
+Every model is evaluated on **the identical 20,082 held-out reviews**. The LLM predictions ship with the dataset, so the comparison is a genuine head-to-head rather than a comparison against published numbers from different test sets.
+
+This notebook constitutes the empirical core of the MSc dissertation *"Reducing AI Carbon Footprint: A Study of DistilBERT for Mental Health Sentiment Analysis"*.
 
 ---
 
 ## Motivation and Research Question
 
-The AI industry is consuming more energy than ever. Training and running frontier LLMs like GPT-4 requires significant compute and therefore significant carbon emissions. Yet many real-world NLP tasks — such as classifying the sentiment of user reviews — are well-defined, structured problems where a smaller, purpose-built model may be just as effective.
+The AI industry is consuming more energy than ever. Training and running frontier LLMs requires significant compute and therefore significant carbon. Yet many real-world NLP tasks — such as classifying the sentiment of user reviews — are well-defined, structured problems where a smaller, purpose-built model may be just as effective.
 
-**The central research question is:**
+> *Can a fine-tuned DistilBERT (67M parameters) match or closely approach the predictive performance of frontier LLMs (8B to 1.76T parameters) on mental health app review classification, while emitting orders of magnitude less CO₂?*
 
-> *Can a fine-tuned DistilBERT (66M parameters) match or closely approach the predictive performance of frontier LLMs (ranging from 8B to 100B+ parameters) on mental health app review classification, while emitting orders of magnitude less CO₂?*
+This is not merely academic. Mental health app developers, researchers, and regulators increasingly need to understand how users feel about these tools at scale. Automating that with an energy-efficient local model rather than paying for GPT-4 API calls per prediction has economic, environmental **and privacy** implications — a locally-run model means review text never leaves your infrastructure.
 
-This is not merely an academic comparison. Mental health app developers, researchers, and regulators increasingly need to understand how users feel about these tools at scale. Automating this with an energy-efficient model rather than paying for GPT-4 API calls per prediction has both economic and environmental implications.
+---
+
+## Headline Results
+
+| | DistilBERT | Best LLM | Gap |
+|---|---|---|---|
+| **3-class accuracy** | 88.35% | 90.73% (LLaMA 3.3 70B) | −2.38 pp |
+| **3-class macro F1** | **0.7338 — 2nd of 8** | 0.7473 (Gemini 1.5 Pro) | −0.0135 |
+| **5-class accuracy** | 71.90% | 74.94% (GPT-4) | −3.04 pp |
+| **5-class macro F1** | **0.5664 — 3rd of 8** | 0.5791 (Gemini 1.5 Pro) | −0.0127 |
+| **5-class MAE (stars)** | 0.3479 | 0.3130 (GPT-4) | +0.0349 |
+| **Parameters** | **67 million** | 1.76 trillion (GPT-4, est.) | **26,000× smaller** |
+| **Training CO₂** | **13.3 g, both models** | not disclosed | — |
+| **Inference CO₂** | **0.0041 mg / prediction** | not disclosed | — |
+| **Throughput** | **12,300 reviews/sec** | API rate-limited | — |
+| **Failed predictions** | **0 of 20,082** | up to 1,039 (LLaMA 3.1 8B) | — |
+
+On the 5-class task, DistilBERT's macro F1 of **0.5664** sits **0.0012 below GPT-4's 0.5676**. That is a difference of roughly one prediction in a thousand, between a 67M-parameter model trained in three minutes and a system three orders of magnitude larger.
 
 ---
 
 ## Dataset: MHARD
 
-**Name:** MHARD — Mental Health App Reviews Dataset  
-**Source:** Wang et al., ICWSM 2025  
-**Size:** 200,972 user reviews  
-**Coverage:** 73 mental health applications on the Google Play Store  
-**Time Range:** Reviews scraped between 2011 and 2023  
+**Name:** MHARD — Mental Health App Reviews Dataset
+**Source:** Wang et al., ICWSM 2025
+**Raw size:** 200,972 user reviews
+**Coverage:** 73 mental health applications on the Google Play Store
+**Time range:** 2011 to 2023
 
-Each row in the dataset contains:
-
-| Column | Description |
-|--------|-------------|
-| `UID` | Unique review identifier |
-| `app_name` | Name of the mental health app |
-| `date` | Date the review was posted |
-| `review` | Raw review text (primary input) |
-| `review_cleaned` | Pre-tokenised, stopword-removed version (used for EDA only) |
-| `rating` | Ground truth star rating (1–5), given by the app user |
-| `likes` | Number of helpful votes the review received |
-| `response` | Developer's response to the review (~74% missing) |
-| `pred_gpt3.5instruct` | GPT-3.5 Instruct predicted rating |
-| `pred_gpt3.5turbo` | GPT-3.5 Turbo predicted rating |
-| `pred_gpt4` | GPT-4 predicted rating |
-| `pred_gemini1.5flash` | Gemini 1.5 Flash predicted rating |
-| `pred_gemini1.5pro` | Gemini 1.5 Pro predicted rating |
-| `pred_llama3.1_8b` | LLaMA 3.1 8B predicted rating |
-| `pred_llama3.3_70b` | LLaMA 3.3 70B predicted rating |
+Each row contains the review text, the ground-truth star rating given by the user, and predicted ratings from seven LLMs — which is what makes the head-to-head possible.
 
 ### Class Distribution
 
-The dataset exhibits a strong positive skew — a structural feature common to app review data where users are more motivated to write reviews when satisfied:
+The dataset has a strong positive skew, a structural feature of app review data where satisfied users are more motivated to write:
 
-| Rating | Count | Percentage |
-|--------|-------|------------|
-| 1-star | ~24,000 | ~12% |
-| 2-star | ~11,000 | ~5% |
-| 3-star | ~18,000 | ~9% |
-| 4-star | ~32,000 | ~16% |
-| 5-star | ~116,000 | ~58% |
+| Rating | Test-set count | Share |
+|--------|---------------|-------|
+| 1-star | 3,457 | 17.2% |
+| 2-star | 892 | 4.4% |
+| 3-star | 1,110 | 5.5% |
+| 4-star | 2,509 | 12.5% |
+| 5-star | 12,114 | 60.3% |
 
-Collapsed into 3 classes: **~17% negative, ~9% neutral, ~73% positive**. This means a majority-class baseline (always predict "positive") would achieve ~73% accuracy on Task B — setting a meaningful minimum bar that any model must comfortably exceed.
+Collapsed to three classes: negative 4,349 (21.7%), neutral 1,110 (5.5%), positive 14,623 (72.8%).
+
+**Class imbalance ratio:** 13.59× on the 5-class task, 13.17× on the 3-class task.
+
+**The majority-class baseline on Task B is 72.82%.** Always predicting "positive" gets you nearly 73% accuracy without a model at all. Any accuracy figure on this dataset has to be read against that floor — which is precisely why macro F1 is the primary metric here.
+
+### After cleaning
+
+| Split | Size |
+|---|---|
+| Train | 160,649 |
+| Validation | 20,081 |
+| Test | **20,082** |
+| **Total** | **200,812** |
+
+Roughly 160 rows were removed from the raw 200,972: null reviews, empty-after-normalisation rows, and reviews under three words.
 
 ---
 
 ## Experimental Design
 
-The experiment is structured around two parallel fine-tuning tasks, each evaluated on the same held-out test set and compared against LLM baselines on the same rows.
+Both tasks use the **same** stratified split, the **same** tokenisation, and the **same** hyperparameters except epoch count. This makes Task A and Task B metrics directly comparable, and it means the LLM baselines are evaluated on exactly the same rows.
 
-**Task A — 5-class ordinal classification:** Predict the exact star rating (1–5). This is the harder, more granular problem. Mean Absolute Error (MAE) is meaningful here because a prediction of 4 for a true 5-star review is a smaller mistake than predicting 1.
-
-**Task B — 3-class sentiment classification:** Collapse ratings into Negative (1–2), Neutral (3), and Positive (4–5). This is the standard simplified view used in review analytics.
-
-Both tasks use the **same** stratified train/validation/test split, the **same** tokenisation, and the **same** training hyperparameters (except for the number of epochs). This ensures the two task metrics are directly comparable and that LLM baselines are evaluated on exactly the same test rows.
+**Stratification is performed on the 5-class rating**, not the 3-class collapse. Stratifying on the finer grid automatically preserves the coarser distribution; the reverse is not true.
 
 ### Evaluation Metrics
 
 | Metric | Purpose |
 |--------|---------|
-| Accuracy | Standard overall correctness |
-| Weighted F1 | Class-size-weighted F1 — useful summary for imbalanced data |
-| Macro F1 | Unweighted mean F1 across all classes — this is the **primary metric** because it treats minority classes equally and cannot be gamed by ignoring them |
-| MAE (stars) | Ordinal error magnitude — meaningful only for Task A |
-| Cohen's κ | Agreement between DistilBERT predictions and each LLM |
-| CO₂eq (kg) | Carbon emissions for both training and inference phases |
-| Inference latency (ms/sample) | Operational efficiency |
-| Throughput (samples/sec) | Scalability indicator |
+| Accuracy | Standard overall correctness — but see the majority baseline above |
+| Weighted F1 | Class-size-weighted F1 |
+| **Macro F1** | Unweighted mean F1 across classes. **The primary metric**, because it treats minority classes equally and cannot be gamed by ignoring them |
+| MAE (stars) | Ordinal error magnitude, Task A only. Predicting 4 for a true 5 is a smaller mistake than predicting 1 |
+| Cohen's κ | Agreement between DistilBERT and each LLM |
+| CO₂eq | Emissions for training and inference, via CodeCarbon |
+| Latency / throughput | Operational efficiency |
 
 ---
 
 ## Project Architecture and Pipeline
 
-The notebook is structured into 17 sequential steps, each building on the last. Below is a detailed walkthrough of every step — what it does, why, and what it produces.
+The notebook runs 17 sequential steps. Condensed walkthrough:
 
----
+**Steps 1–2 — Setup and reproducibility.** Mounts Drive, installs dependencies, fixes every source of randomness to seed 42 (Python `random`, NumPy, PyTorch, CUDA, HuggingFace `set_seed`), and checks the device.
 
-### Step 1 – Environment Setup
+**Steps 3–5 — Load and profile.** Reads 200,972 rows × 17 columns. Analyses missingness (`response` is ~74% missing and dropped; `review` and `rating` are near-complete with ~21 nulls). Quantifies class imbalance and computes balanced inverse-frequency class weights.
 
-**What it does:** Mounts Google Drive for persistent storage and installs all required packages.
+**Step 6 — `max_length` decision.** DistilBERT supports 512 tokens, but compute scales with sequence length. Word-count statistics plus a 2,000-review empirical tokenisation check gave **`MAX_LENGTH = 128`**, covering **99.45% of reviews without truncation**, with a median tokenised length of just **30 tokens**. This is a carbon decision made with evidence rather than a default.
 
-```bash
-pip install transformers datasets evaluate accelerate
-pip install scikit-learn wordcloud codecarbon
-```
+**Step 7 — Minimal cleaning.** Only four operations: strip whitespace, replace URLs, collapse 3+ character repetitions to 2, collapse whitespace runs. Classical NLP cleaning (stemming, stopword removal, lowercasing) would destroy signal the pretrained tokeniser was built to interpret.
 
-Google Drive is used throughout to persist model checkpoints, emissions logs, and evaluation artifacts. Training directly to Drive would be slow due to sync latency, so a local-to-Drive pattern is used: train locally on Colab's SSD, then copy final artifacts to Drive at the end.
+**Step 8 — EDA and LLM preview.** Word clouds per rating, log-odds distinctiveness analysis, and a pairwise agreement heatmap between LLMs. That heatmap shows the top-tier models agree with **each other** more than with ground truth, which suggests shared systematic bias in how LLMs read star ratings.
 
----
+**Steps 9–11 — Labels, split, tokenisation.** 0-indexed labels for both schemes, LLM predictions remapped to the same schema, stratified 80/10/10 split with UID-overlap assertions, then tokenisation with `padding=False` and `DataCollatorWithPadding` for **dynamic per-batch padding** — which eliminates roughly 75% of wasted compute on padding tokens, given a 30-token median.
 
-### Step 2 – Imports, Seeds, and Device Check
+**Step 12 — Model, weighted loss, metrics.** A `WeightedLossTrainer` subclass overrides `compute_loss()` to inject class-weighted cross-entropy. A dry-run forward pass verifies the weighted loss actually differs from unweighted before any GPU time is committed.
 
-**What it does:** Imports all libraries, fixes every source of randomness to seed `42`, and detects the available hardware.
+**Steps 13–16 — Training and evaluation.** Task A for 3 epochs, Task B for 2. Full CodeCarbon tracking on both training and inference, inside `try/finally` so the tracker always stops cleanly.
 
-Reproducibility is enforced at every level — Python's `random`, NumPy, PyTorch, CUDA, and HuggingFace's `set_seed()` are all fixed. This ensures that a reviewer or collaborator can re-run the notebook and obtain identical splits, identical initialisation weights, and identical metric values.
-
-The device check confirms whether a GPU is available. Training DistilBERT on 200k+ rows on CPU is impractical; a T4 GPU (free-tier Colab) is the minimum recommended hardware.
-
----
-
-### Step 3 – Load the MHARD Dataset
-
-**What it does:** Reads the MHARD CSV into a pandas DataFrame and performs an initial structural inspection.
-
-Key outputs:
-- Dataset shape: **200,972 rows × 17 columns**
-- Memory footprint reported (approximately 150–200 MB in pandas)
-- Column-by-column dtype and non-null count summary
-- Side-by-side preview of raw vs. cleaned review text for the same rows — this makes the downstream tokenisation choice (use raw, not pre-cleaned) concrete and visible
-
----
-
-### Step 4 – Missing Value Analysis
-
-**What it does:** Analyses and visualises missing values across all columns, then categorises each column by its role in the pipeline.
-
-Key findings:
-- `review` and `rating`: near-complete (only ~21 null reviews — less than 0.01%)
-- `response` and `response_date`: ~74% missing — dropped from the pipeline
-- LLM prediction columns: varying degrees of missingness, handled pairwise at evaluation time
-
-A horizontal bar chart visualises missingness percentage per column, and columns are classified into four roles: Training, LLM Baseline Evaluation, Metadata Only, and Optional.
-
----
-
-### Step 5 – Rating Distribution and Class Imbalance
-
-**What it does:** Quantifies and visualises the class imbalance for both the 5-class and 3-class label schemes, then computes class weights for the weighted loss function.
-
-**Class imbalance ratio (5-class):** The majority class (5-star) is approximately 10–14× larger than the minority class (2-star). If left unaddressed, the model would learn to predict "5-star" by default.
-
-**Solution — balanced inverse-frequency class weights:** Using `sklearn.utils.class_weight.compute_class_weight`, weights are computed such that the loss function penalises misclassifications on rare classes proportionally more. These weights are passed to a custom `WeightedLossTrainer` (see Step 12).
-
-Visualisations include dual bar/pie charts for both 5-class and 3-class distributions, and a stacked horizontal bar chart showing rating distribution per app (top 15 apps by review count) — confirming the positive skew is a dataset-wide structural pattern, not driven by one outlier app.
-
----
-
-### Step 6 – Review Length Analysis and max_length Decision
-
-**What it does:** Analyses the distribution of review lengths in words and characters, then makes a principled, emissions-aware choice of `max_length` for the DistilBERT tokeniser.
-
-**The problem:** DistilBERT supports up to 512 tokens, but compute cost scales with sequence length. Padding every review to 512 tokens when the median review is ~30 words is massively wasteful.
-
-**The methodology:**
-1. Compute word count statistics across all reviews
-2. Apply the rule-of-thumb conversion: 1 English word ≈ 1.3 WordPiece tokens
-3. Identify the candidate `max_length` that covers 95%+ of reviews without truncation
-4. **Empirically verify** by actually tokenising a 2,000-review sample and measuring real token lengths
-
-**Result:** `MAX_LENGTH = 128` was selected. It covers **99.45% of reviews without truncation**, and the median tokenised review is only **30 tokens** — meaning most reviews are padded from 30 to (at most) 128, a fraction of the 512-token maximum. This directly reduces training time and carbon emissions while sacrificing only 0.55% of reviews to truncation.
-
----
-
-### Step 7 – Data Cleaning Implementation
-
-**What it does:** Applies a minimal, targeted text cleaning pipeline and audits each step with exact row counts.
-
-**Philosophy:** Do as little as possible. DistilBERT's WordPiece tokeniser already handles casing, punctuation, contractions, and subword decomposition. Classical NLP cleaning (stemming, stopword removal, lowercasing) would **destroy signal** that the pretrained model was specifically trained to interpret.
-
-The normalisation function applies only four operations:
-1. Strip leading/trailing whitespace
-2. Replace URLs with a space (URL tokens are long junk sequences with no review sentiment)
-3. Collapse character repetitions of 3+ to 2 (e.g., `"sooooo"` → `"soo"`)
-4. Collapse runs of whitespace to a single space
-
-**Cleaning audit results:**
-
-| Step | Action | Rows Removed |
-|------|--------|-------------|
-| Initial | — | 200,972 |
-| Drop null reviews | Remove 21 rows | ~21 |
-| Drop empty-after-normalisation | Remove whitespace-only rows | ~0 |
-| Drop reviews < 3 words | Too short to carry signal | ~100–200 |
-| **Final** | — | **~200,750** |
-
-A before/after distribution plot confirms the rating proportions are unchanged after cleaning (delta < 0.02% per class).
-
----
-
-### Step 8 – Word Clouds and LLM Agreement Preview
-
-**What it does:** Performs two key EDA analyses — qualitative text patterns per rating, and a quantitative preview of LLM baseline accuracy.
-
-**Word clouds per rating:** Built from the pre-cleaned column (stopwords already removed), using colour-maps that match sentiment (red for 1-star, green for 5-star). These reveal the vocabulary that most distinctively characterises each star rating.
-
-**Log-odds distinctiveness analysis:** Rather than raw frequency (dominated by "app" across all classes), a log-odds metric identifies words that appear disproportionately in each class vs. all others. This surfaces genuinely discriminative vocabulary.
-
-**LLM Baseline Preview (full cleaned dataset):**
-
-This is the most important EDA cell for the thesis narrative. For each LLM, exact-match accuracy and MAE are computed across all available predictions:
-
-| LLM | Accuracy | MAE |
-|-----|----------|-----|
-| GPT-4 | **0.752** | **0.307** |
-| Gemini 1.5 Pro | ~0.748 | ~0.315 |
-| LLaMA 3.3 70B | ~0.742 | ~0.320 |
-| GPT-3.5 Turbo | ~0.680 | ~0.390 |
-| GPT-3.5 Instruct | ~0.660 | ~0.410 |
-| Gemini 1.5 Flash | ~0.612 | ~0.450 |
-| LLaMA 3.1 8B | ~0.610 | ~0.460 |
-
-*Note: Exact figures are computed at runtime from the MHARD dataset.*
-
-The frontier LLMs (GPT-4, Gemini 1.5 Pro, LLaMA 3.3 70B) cluster at ~74–75% accuracy. This is the performance bar DistilBERT needs to approach or match.
-
-A pairwise agreement heatmap between LLMs reveals that the top-tier models agree with each other more than they agree with ground truth — suggesting shared systematic biases in how LLMs interpret star ratings.
-
----
-
-### Step 9 – Label Encoding for Both Tasks
-
-**What it does:** Creates the integer label columns expected by PyTorch, and remaps LLM predictions to the same schema for fair comparison.
-
-**Task A (5-class):** Ratings 1–5 are shifted to 0–4 (PyTorch classification heads expect 0-indexed labels).
-
-```
-rating 1 → label 0 (1-star)
-rating 2 → label 1 (2-star)
-rating 3 → label 2 (3-star)
-rating 4 → label 3 (4-star)
-rating 5 → label 4 (5-star)
-```
-
-**Task B (3-class):**
-```
-rating 1, 2 → label 0 (negative)
-rating 3    → label 1 (neutral)
-rating 4, 5 → label 2 (positive)
-```
-
-All seven LLM prediction columns are remapped to the 3-class schema in new columns (`pred_*_3class`), with NaN values preserved for pairwise evaluation. A programmatic consistency assertion confirms that `label_3class` is always the correct collapse of `label_5class`, catching any label assignment bugs before training.
-
----
-
-### Step 10 – Stratified 80/10/10 Split
-
-**What it does:** Splits the cleaned dataset into train (80%), validation (10%), and test (10%) with stratification, and verifies split integrity.
-
-**Critical design decision:** Stratification is performed on the **5-class rating** column, not 3-class. Stratifying on the finer grid automatically preserves the 3-class distribution too (since 3-class is a deterministic collapse), but not vice versa. This single split is used for both tasks — using different splits would make Task A and Task B test metrics incomparable.
-
-**Split sizes (~200,750 rows):**
-| Split | Size | Percentage |
-|-------|------|-----------|
-| Train | ~160,600 | 80% |
-| Validation | ~20,075 | 10% |
-| Test | ~20,075 | 10% |
-
-**Integrity checks performed:**
-- No UID overlap between any two splits (train/val, train/test, val/test)
-- All 5 rating classes present in every split
-- All 3 sentiment classes present in every split
-- Split sizes sum to total cleaned row count
-
-A `test_llm_preds` DataFrame is extracted immediately, containing the LLM predictions for test-set rows only. This is the slice used in Step 17 for a fair head-to-head comparison.
-
----
-
-### Step 11 – Tokenization with DistilBERT
-
-**What it does:** Converts the three pandas splits to HuggingFace `DatasetDict` objects, tokenises all reviews with the DistilBERT tokeniser, and creates task-specific dataset views.
-
-**Why HuggingFace Datasets?** Apache Arrow (the underlying format) is memory-mapped, which keeps RAM usage manageable for 200k+ rows. Batched `.map()` tokenisation is ~10× faster than row-wise pandas apply, and the Trainer API expects Dataset objects directly.
-
-**Tokenisation parameters:**
-- `tokenizer`: `DistilBertTokenizerFast` from `distilbert-base-uncased`
-- `truncation=True` (handles the 0.55% of reviews > 128 tokens)
-- `padding=False` (dynamic padding at batch time — see below)
-- `max_length=128`
-- `batch_size=1000` for the map operation
-
-**Dynamic padding:** Instead of padding every review to 128 tokens statically, `DataCollatorWithPadding` pads each training batch to the length of its longest sample. Since the median review is only 30 tokens, this eliminates ~75% of wasted compute on padding tokens — a direct carbon saving with no quality trade-off.
-
-After tokenisation, two task-specific views are created by renaming the appropriate label column to `"label"` (required by HuggingFace Trainer) and dropping the unused one. Both views use the **identical encoded text** — only the label column differs.
-
----
-
-### Step 12 – Model Architecture, Weighted Loss, and Metrics
-
-**What it does:** Defines the three shared components used by both task trainers: the model factory, the custom weighted-loss trainer, and the compute-metrics functions.
-
-**Model factory (`build_distilbert`):** A function that loads `DistilBertForSequenceClassification` with the correct `num_labels`, `id2label`, and `label2id` for each task, and moves the model to the target device. Each task gets its own freshly initialised model — there is no weight sharing between Task A and Task B.
-
-**`WeightedLossTrainer`:** A subclass of HuggingFace's `Trainer` that overrides `compute_loss()` to inject class-weighted `CrossEntropyLoss`. The class weights (computed in Step 5) are passed as a `torch.Tensor` at construction time and automatically moved to the model's device. This is the idiomatic HuggingFace way to handle class imbalance — monkey-patching or callbacks cannot reach the loss function.
-
-**Metrics functions:**
-- `compute_metrics_5class`: returns accuracy, weighted F1, macro F1, and MAE in stars
-- `compute_metrics_3class`: returns accuracy, weighted F1, and macro F1
-
-Macro F1 is used as the `metric_for_best_model` in TrainingArguments. This is intentional — macro F1 treats minority classes equally and cannot be artificially inflated by a model that ignores neutral or 2-star reviews. A dry-run forward pass verifies that the weighted loss actually differs from unweighted loss before any GPU time is committed.
-
----
-
-### Step 13 – Task A Training (5-class, 3 Epochs)
-
-**What it does:** Configures and launches fine-tuning of the 5-class DistilBERT head with full CodeCarbon emissions tracking.
-
-**Hyperparameters:**
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| Batch size | 32 | Standard for DistilBERT on T4; fits fp16 with headroom |
-| Epochs | 3 | Standard for fine-tuning a pretrained model on large datasets |
-| Learning rate | 2e-5 | Canonical DistilBERT fine-tune LR; stable under class-weighted loss |
-| Warmup ratio | 0.1 | 10% warmup ramps LR from 0 to peak — improves early training stability |
-| Weight decay | 0.01 | Light L2 regularisation (AdamW default) |
-| Precision | fp16 | ~40% speed improvement and ~50% memory reduction vs fp32, with negligible accuracy cost |
-| Eval strategy | epoch | One eval per epoch — enough granularity without wasting compute |
-| Best-model metric | f1_macro | Imbalance-aware metric; selected checkpoint is restored at end of training |
-| Early stopping | patience=2 | Stops training if validation f1_macro doesn't improve by 0.001 across 2 epochs |
-
-Training is run inside a `try/finally` block with `EmissionsTracker` so that CodeCarbon always stops cleanly even if training is interrupted. Emissions are logged to Drive as `emissions_5class_train.csv`.
-
-**Expected training time:** 25–40 minutes on a T4 GPU (fp16).
-
----
-
-### Step 14 – Task A Test Evaluation
-
-**What it does:** Evaluates the best-checkpoint model on the held-out test set, generates confusion matrices, produces a per-class classification report, and saves all artifacts to Drive.
-
-**Inference emissions** are tracked separately from training using a second `EmissionsTracker` instance, enabling the per-prediction CO₂ figure that is the key carbon efficiency metric.
-
-**Outputs produced:**
-- Test set accuracy, weighted F1, macro F1, MAE
-- Inference throughput (samples/sec) and latency (ms/sample)
-- CO₂ emissions in grams total and micrograms per prediction
-- Two confusion matrices (raw counts + row-normalised percentages)
-- Full per-class `classification_report` (precision, recall, F1, support)
-- Qualitative inference on 7 hand-crafted example reviews
-- `metrics_summary.json` and `label_mapping.json` saved to Drive alongside the model weights
-
----
-
-### Step 15 – Task B Training (3-class, 2 Epochs)
-
-**What it does:** Configures and launches fine-tuning of the 3-class DistilBERT head. Structurally identical to Step 13 with one deliberate difference.
-
-**KEY DIFFERENCE — Epochs reduced from 3 to 2:**
-
-Task A's training logs showed that validation f1_macro at epoch 1 was 0.5698 and at epoch 3 was 0.5716 — essentially flat. The 3-class problem has fewer decision boundaries to learn (3 classes vs. 5), so convergence is faster. Training for a third epoch would burn additional GPU time and therefore additional emissions without meaningfully improving performance. **Reducing to 2 epochs is a carbon-aware methodology decision**, not a compromise — it saves approximately one-third of Task B's training emissions while the model is already converged.
-
-This is directly relevant to the thesis narrative: even within a single small model, thoughtful hyperparameter choices driven by observed convergence can reduce emissions without sacrificing quality.
-
----
-
-### Step 16 – Task B Test Evaluation
-
-**What it does:** Mirrors Step 14 for the 3-class task. Generates test metrics, confusion matrices, and classification report, and saves all Task B artifacts to Drive.
-
----
-
-### Step 17 – LLM Baseline Comparison
-
-**What it does:** Produces a comprehensive head-to-head comparison table of DistilBERT (both tasks) against all seven LLMs, on the **exact same test rows**, with Cohen's κ agreement statistics.
-
-The comparison covers:
-- 5-class accuracy and MAE for all models
-- 3-class accuracy for all models
-- Macro F1 for all models
-- Cohen's κ between DistilBERT's predictions and each LLM's predictions
-- Carbon emissions comparison (training + inference CO₂ for DistilBERT vs. estimated API call costs for LLMs)
-
-This is the central results table that answers the research question.
+**Step 17 — Head-to-head.** DistilBERT against all seven LLMs on the identical test rows, with Cohen's κ.
 
 ---
 
@@ -442,69 +176,184 @@ This is the central results table that answers the research question.
 
 | Decision | Choice | Why |
 |----------|--------|-----|
-| Input text | Raw `review` column | DistilBERT's tokeniser handles casing and punctuation; cleaning would destroy signal |
-| `max_length` | 128 tokens | Covers 99.45% of reviews; reduces compute ~4× vs. 512 with 0.55% truncation cost |
-| Padding strategy | Dynamic per-batch | Median review is 30 tokens; static padding to 128 wastes 75% of compute on padding tokens |
-| Class imbalance | Weighted CrossEntropyLoss | 5-star class is ~14× more frequent than 2-star; without weights the model predicts "5" by default |
-| Best-model metric | Macro F1 | Accuracy and weighted F1 can be gamed by ignoring minority classes; macro F1 cannot |
-| Precision | fp16 | ~40% training speedup and ~50% memory saving with negligible quality cost = direct carbon reduction |
-| Task B epochs | 2 (vs. 3 for Task A) | Task A validation f1_macro was flat from epoch 1 to 3; reducing epochs is an evidence-based carbon saving |
-| Stratification column | 5-class rating | Preserves both 5-class and 3-class distributions simultaneously; 3-class stratification alone would not |
-| Single split | Same rows for Task A and B | Required for comparable headline numbers and for the LLM baseline comparison to be meaningful |
+| Input text | Raw `review` column | DistilBERT's tokeniser handles casing and punctuation; cleaning destroys signal |
+| `max_length` | 128 tokens | Covers 99.45% of reviews; ~4× less compute than 512 for 0.55% truncation cost |
+| Padding | Dynamic per-batch | Median review is 30 tokens; static padding to 128 wastes ~75% of compute |
+| Class imbalance | Weighted CrossEntropyLoss | 5-star is 13.59× more frequent than 2-star; unweighted, the model predicts "5" by default |
+| Best-model metric | Macro F1 | Accuracy and weighted F1 can be gamed by ignoring minority classes |
+| Precision | fp16 | ~40% speedup, ~50% memory saving, negligible quality cost = direct carbon reduction |
+| **Task B epochs** | **2 rather than 3** | Task A's validation macro F1 was 0.5698 at epoch 1 and 0.5716 at epoch 3 — flat. Cutting the third epoch is an **evidence-based carbon saving**, not a compromise |
+| Stratification column | 5-class rating | Preserves both label schemes simultaneously |
+| Single split | Same rows for both tasks | Required for comparable metrics and a fair LLM comparison |
 
 ---
 
-## Results and Findings
+## Results
 
-> *Note: The exact numerical results below are from the DistilBERT EDA baseline preview and training design. Final training metrics are populated at runtime. Update this section after running the notebook.*
+All figures read from the stored outputs of the notebook committed to this repository.
 
-### LLM Baselines (5-class, from dataset EDA preview on full cleaned set)
+### Task A — 5-class rating
 
-| Model | Parameters | Accuracy | MAE |
-|-------|-----------|----------|-----|
-| GPT-4 | ~1.76T (est.) | 0.752 | 0.307 |
-| Gemini 1.5 Pro | Large | ~0.748 | ~0.315 |
-| LLaMA 3.3 70B | 70B | ~0.742 | ~0.320 |
-| GPT-3.5 Turbo | ~175B | ~0.680 | ~0.390 |
-| GPT-3.5 Instruct | ~175B | ~0.660 | ~0.410 |
-| Gemini 1.5 Flash | Medium | ~0.612 | ~0.450 |
-| LLaMA 3.1 8B | 8B | ~0.610 | ~0.460 |
+**Training:** 3 epochs, 15,060 steps, wall time **3.23 minutes**, **7.973 g CO₂**. Final training loss 0.8879, best validation macro F1 0.5809.
 
-The frontier LLMs (GPT-4, Gemini 1.5 Pro, LLaMA 3.3 70B) cluster at ~74–75% accuracy with MAE around 0.31 stars — these form the performance ceiling that DistilBERT targets.
+| Metric | Value |
+|---|---|
+| Accuracy | **71.90%** |
+| Weighted F1 | 0.7436 |
+| **Macro F1** | **0.5664** |
+| MAE (stars) | 0.3479 |
+| Eval loss | 0.9983 |
+| Throughput | 12,303 samples/sec |
+| Latency | 0.08 ms/sample |
+| Inference CO₂ | 0.0829 g total, **0.0041 mg per prediction** |
 
-### DistilBERT Results (to be filled after training run)
+### Task B — 3-class sentiment
 
-| Task | Accuracy | Weighted F1 | Macro F1 | MAE |
-|------|----------|-------------|----------|-----|
-| Task A (5-class) | *(run notebook)* | *(run notebook)* | *(run notebook)* | *(run notebook)* |
-| Task B (3-class) | *(run notebook)* | *(run notebook)* | *(run notebook)* | — |
+**Training:** 2 epochs, 10,040 steps, wall time **2.16 minutes**, **5.334 g CO₂**. Final training loss 0.5072, best validation macro F1 0.7390.
 
-### Key Narrative Finding
+| Metric | Value |
+|---|---|
+| Accuracy | **88.35%** |
+| Weighted F1 | 0.8981 |
+| **Macro F1** | **0.7338** |
+| Eval loss | 0.5557 |
+| Majority-class baseline | 72.82% |
+| **Uplift over baseline** | **+15.54 pp** |
+| Throughput | 12,324 samples/sec |
+| Latency | 0.08 ms/sample |
+| Inference CO₂ | 0.0820 g total, **0.0041 mg per prediction** |
 
-GPT-4 achieves 75.2% accuracy on the 5-class task. The fine-tuned DistilBERT — with 66M parameters versus GPT-4's estimated 1.76T, trained on a T4 GPU in under an hour — is designed to land in the competitive range of this top cluster, at an order-of-magnitude lower carbon and compute cost. The thesis argument is not that DistilBERT necessarily *exceeds* GPT-4, but that approaching frontier performance at drastically lower cost makes task-specific fine-tuning the environmentally responsible choice for well-defined classification tasks.
+### Head to Head, Task A — 5-class rating
+
+All models on the identical 20,082 test rows. Sorted by accuracy.
+
+| Model | n evaluated | n missing | Accuracy | Weighted F1 | Macro F1 | MAE |
+|---|---|---|---|---|---|---|
+| GPT-4 | 20,030 | 52 | **0.7494** | 0.7634 | 0.5676 | **0.3130** |
+| LLaMA 3.3 70B | 19,995 | 87 | 0.7411 | 0.7524 | 0.5542 | 0.3309 |
+| Gemini 1.5 Pro | 20,080 | 2 | 0.7386 | 0.7566 | **0.5791** | 0.3244 |
+| **DistilBERT (67M)** | **20,082** | **0** | **0.7190** | **0.7436** | **0.5664** | **0.3479** |
+| GPT-3.5 Instruct | 20,045 | 37 | 0.6910 | 0.7230 | 0.5479 | 0.3726 |
+| GPT-3.5 Turbo | 20,064 | 18 | 0.6661 | 0.7027 | 0.5162 | 0.4000 |
+| Gemini 1.5 Flash | 19,859 | 223 | 0.6080 | 0.6473 | 0.4876 | 0.5125 |
+| LLaMA 3.1 8B | 19,043 | 1,039 | 0.6072 | 0.6037 | 0.3551 | 0.6204 |
+
+DistilBERT is 4th on accuracy but **3rd on macro F1**, and its 0.5664 sits **0.0012 below GPT-4's 0.5676**. It comfortably beats both GPT-3.5 variants, Gemini 1.5 Flash, and LLaMA 3.1 8B on every metric.
+
+### Head to Head, Task B — 3-class sentiment
+
+| Model | n evaluated | n missing | Accuracy | Weighted F1 | Macro F1 |
+|---|---|---|---|---|---|
+| LLaMA 3.3 70B | 19,995 | 87 | **0.9073** | 0.9030 | 0.7065 |
+| Gemini 1.5 Pro | 20,080 | 2 | 0.9064 | **0.9116** | **0.7473** |
+| GPT-3.5 Instruct | 20,045 | 37 | 0.8982 | 0.9038 | 0.7299 |
+| GPT-4 | 20,030 | 52 | 0.8961 | 0.9035 | 0.7302 |
+| GPT-3.5 Turbo | 20,064 | 18 | 0.8942 | 0.8974 | 0.7099 |
+| **DistilBERT (67M)** | **20,082** | **0** | **0.8835** | **0.8981** | **0.7338** |
+| Gemini 1.5 Flash | 19,859 | 223 | 0.8629 | 0.8711 | 0.6646 |
+| LLaMA 3.1 8B | 19,043 | 1,039 | 0.7832 | 0.7959 | 0.5690 |
+
+### The Ranking Flips Depending on the Metric
+
+This is the most interesting result in the project, and it is easy to miss if you only read the accuracy column.
+
+**Task B ranked by accuracy — DistilBERT is 6th of 8.**
+**Task B ranked by macro F1 — DistilBERT is 2nd of 8.**
+
+| Rank | By accuracy | By macro F1 |
+|---|---|---|
+| 1 | LLaMA 3.3 70B (0.9073) | Gemini 1.5 Pro (0.7473) |
+| 2 | Gemini 1.5 Pro (0.9064) | **DistilBERT (0.7338)** |
+| 3 | GPT-3.5 Instruct (0.8982) | GPT-4 (0.7302) |
+| 4 | GPT-4 (0.8961) | GPT-3.5 Instruct (0.7299) |
+| 5 | GPT-3.5 Turbo (0.8942) | GPT-3.5 Turbo (0.7099) |
+| 6 | **DistilBERT (0.8835)** | LLaMA 3.3 70B (0.7065) |
+| 7 | Gemini 1.5 Flash (0.8629) | Gemini 1.5 Flash (0.6646) |
+| 8 | LLaMA 3.1 8B (0.7832) | LLaMA 3.1 8B (0.5690) |
+
+**Same predictions. Same test rows. Opposite conclusion.**
+
+LLaMA 3.3 70B tops the accuracy table and finishes 6th on macro F1. DistilBERT does the reverse. The explanation is the class distribution: 72.8% of the test set is positive, so a model that leans positive scores well on accuracy while performing poorly on the 5.5% neutral class that accuracy barely registers.
+
+The weighted-loss training explicitly optimised for the balanced view, and the ranking reflects that choice. **Which model is "best" here depends entirely on whether you care about the average review or about every class of review** — and for a mental health application, the neutral and negative reviews are the ones that matter operationally.
+
+### Per-Class Performance
+
+**Task A — 5-class**
+
+| Class | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| 1-star | 0.8660 | 0.7368 | **0.7962** | 3,457 |
+| 2-star | 0.3149 | 0.4854 | **0.3820** | 892 |
+| 3-star | 0.3077 | 0.4730 | **0.3729** | 1,110 |
+| 4-star | 0.3580 | 0.5249 | 0.4257 | 2,509 |
+| 5-star | 0.9264 | 0.7939 | **0.8550** | 12,114 |
+| **Macro avg** | 0.5546 | 0.6028 | **0.5664** | 20,082 |
+| Weighted avg | 0.7836 | 0.7190 | 0.7436 | 20,082 |
+
+**Task B — 3-class**
+
+| Class | Precision | Recall | F1 | Support |
+|---|---|---|---|---|
+| negative | 0.8837 | 0.8558 | **0.8695** | 4,349 |
+| neutral | 0.2919 | 0.5712 | **0.3863** | 1,110 |
+| positive | 0.9773 | 0.9155 | **0.9454** | 14,623 |
+| **Macro avg** | 0.7176 | 0.7808 | **0.7338** | 20,082 |
+| Weighted avg | 0.9191 | 0.8835 | 0.8981 | 20,082 |
+
+### Where It Fails
+
+**The middle of the scale.** On Task B, neutral scores F1 **0.3863** against 0.8695 for negative and 0.9454 for positive. The pattern is precision 0.2919 with recall 0.5712 — the model finds most neutral reviews but is wrong about two-thirds of the ones it labels neutral. That is the weighted loss doing exactly what it was told: over-predict the rare class to catch it, at the cost of precision.
+
+The same shape appears on Task A, where 2-star (0.3820) and 3-star (0.3729) are the two weakest classes while 1-star and 5-star both clear 0.79. The extremes are easy; the middle is genuinely ambiguous, and a review saying "it has helped a little but nothing groundbreaking" sits somewhere between 3 and 4 for a human annotator too.
+
+**Qualitative check.** On 50 random test reviews (seed 42): 36 correct (72.0%), 9 off by one (18.0%), **45 within ±1 (90.0%)**. The errors are near-misses on an ordinal scale, not category collapses.
+
+**The operational point about missing predictions.** DistilBERT returned a prediction for all 20,082 rows. The API models did not — LLaMA 3.1 8B failed on 1,039 rows (5.2%), Gemini 1.5 Flash on 223, GPT-4 on 52. In a production pipeline every one of those is a row needing a retry or a fallback. A local model has no such failure mode.
 
 ---
 
 ## Carbon Efficiency Analysis
 
-One of the central contributions of this project is the concrete, measurable carbon comparison between a fine-tuned small model and frontier LLMs.
+Measured with CodeCarbon, which tracks CPU, GPU and RAM energy and converts using regional grid carbon intensity.
 
-### DistilBERT Carbon Footprint (tracked with CodeCarbon)
+| Phase | Task | Duration | CO₂ |
+|---|---|---|---|
+| Training | Task A (5-class, 3 epochs) | 3.23 min | **7.973 g** |
+| Training | Task B (3-class, 2 epochs) | 2.16 min | **5.334 g** |
+| Inference | Task A test set (20,082 samples) | 1.63 s | 0.0829 g |
+| Inference | Task B test set (20,082 samples) | 1.63 s | 0.0820 g |
+| **Total** | both models, end to end | **~5.4 min** | **~13.5 g** |
 
-| Phase | Task | Duration | CO₂ emitted |
-|-------|------|----------|-------------|
-| Training | Task A (5-class, 3 epochs) | ~30–40 min on T4 | *(logged to `emissions_5class_train.csv`)* |
-| Training | Task B (3-class, 2 epochs) | ~20–28 min on T4 | *(logged to `emissions_3class_train.csv`)* |
-| Inference | Task A test set (20,075 samples) | *(seconds)* | *(logged to `emissions_5class_test.csv`)* |
-| Inference | Task B test set (20,075 samples) | *(seconds)* | *(logged to `emissions_3class_test.csv`)* |
+### What that means per prediction
 
-CodeCarbon measures energy consumption by CPU, GPU, and RAM, then converts to kg CO₂eq using the regional grid carbon intensity (auto-detected; UK grid ≈ 250 g CO₂/kWh).
+**0.0041 mg CO₂ per prediction.** At that rate:
 
-### Why This Matters
+- Classifying the entire 200,972-review MHARD corpus costs about **0.82 g CO₂**
+- Classifying **one million** reviews costs about **4.1 g CO₂** — less than a third of what it took to train the model
+- Training both models cost **13.3 g**, roughly the emissions of boiling a small cup of water
 
-Frontier LLM API calls (e.g., GPT-4 via OpenAI API) each trigger inference through a multi-hundred-billion-parameter model. Classifying 200,000 reviews through the GPT-4 API generates orders of magnitude more CO₂ than a single fine-tuning run of DistilBERT — and the fine-tuned model can then be reused for millions of predictions at a per-sample energy cost that is a tiny fraction of each API call.
+The training cost is a one-off. Every prediction after that is close to free, both in carbon and in money, and it runs on your own hardware.
 
-The per-prediction CO₂ figure (measured in **milligrams** for DistilBERT inference) is the key number that makes this argument concrete and defensible.
+### The comparison, honestly stated
+
+The seven LLM baselines were run by the MHARD authors, and **their inference emissions are not disclosed**. Frontier providers do not publish per-token energy figures, so an exact multiplier is not available from this data.
+
+What can be said precisely: each of those predictions triggered inference through a model between 8 billion and an estimated 1.76 trillion parameters, running in a remote data centre, with the review text travelling over the network in both directions. DistilBERT is 67 million parameters running locally at 12,300 predictions per second. The order-of-magnitude difference is not in dispute; the exact figure is simply not measurable from the public side.
+
+**The privacy argument is arguably stronger than the carbon one.** Mental health app reviews are sensitive user text. A locally-run classifier means that data never leaves your infrastructure. No API contract, no data-processing agreement, no third-party retention policy to reason about.
+
+---
+
+## Limitations
+
+- **Neutral class performance is poor.** F1 0.3863, precision 0.2919. If your application depends on identifying ambivalent users specifically, this model is not adequate as-is. Threshold tuning, focal loss, or a dedicated ordinal-regression head are the obvious next steps
+- **Single run, single seed.** Seed 42 throughout, so the run is reproducible — but reproducible is not the same as representative. A mean and standard deviation across several seeds would be the stronger claim
+- **LLM emissions are unmeasured**, for the reasons above. The carbon comparison is directional, not a precise ratio
+- **The LLM predictions are pre-computed** by the MHARD authors. Their prompting strategy, temperature and parsing are fixed and not controlled by this work. Different prompts could produce different LLM results
+- **Single domain.** Mental health app reviews from Google Play, English only, 2011–2023. Transfer to other review domains or other languages is untested
+- **Label noise.** The "ground truth" is the star rating the user selected, which is itself a noisy proxy for sentiment. Users routinely write positive text and leave 3 stars, or vice versa. Part of the residual error on every model here is irreducible
+- **Hardware variance.** The wall times logged (3.23 and 2.16 minutes) are considerably faster than a free-tier T4 would deliver on 160k samples. Emissions scale with the hardware actually used, so reproduce on your own setup before quoting the figures
 
 ---
 
@@ -512,57 +361,44 @@ The per-prediction CO₂ figure (measured in **milligrams** for DistilBERT infer
 
 ### Prerequisites
 
-- Google Colab account (free tier with T4 GPU, or Colab Pro for L4/A100)
-- Google Drive with at least 2 GB free space
-- MHARD dataset CSV (`MHARD_dataset.csv`) — available from the authors of Wang et al. ICWSM 2025 or via the HuggingFace datasets hub
+- Google Colab account (GPU runtime)
+- Google Drive with at least 2 GB free
+- MHARD dataset CSV (`MHARD_dataset.csv`) — from the authors of Wang et al., ICWSM 2025
 
 ### Steps
 
-**1. Upload the dataset to Google Drive**
+**1. Upload the dataset to Drive** at `My Drive/Colab Notebooks/DistilBERT/MHARD_dataset.csv`
 
-Place `MHARD_dataset.csv` at:
-```
-My Drive/Colab Notebooks/DistilBERT/MHARD_dataset.csv
-```
+**2. Open the notebook in Colab**
 
-**2. Open the notebook in Google Colab**
+**3. Enable GPU:** `Runtime → Change runtime type → GPU`
 
-Either upload the `.ipynb` file directly to Colab, or open it from GitHub using the Colab badge (if configured).
+**4. Run all cells in order.** Steps 13 and 15 are the training runs.
 
-**3. Enable GPU runtime**
+**5. Retrieve artifacts from Drive:**
 
-In Colab: `Runtime → Change runtime type → GPU (T4 or better)`
-
-**4. Run all cells in order**
-
-Execute cells sequentially from Step 1 through Step 17. Each step prints a summary of its outputs. Steps 13 and 15 (training) will take 20–40 minutes each.
-
-**5. Retrieve artifacts from Drive**
-
-After the notebook completes, the following artifacts will be in Drive:
 ```
 My Drive/Colab Notebooks/DistilBERT/
-├── distilbert_5class_final/
-│   ├── config.json
-│   ├── model.safetensors
-│   ├── tokenizer.json
-│   ├── tokenizer_config.json
-│   ├── vocab.txt
-│   ├── special_tokens_map.json
-│   ├── metrics_summary.json
-│   └── label_mapping.json
-├── distilbert_3class_final/
-│   └── (same structure as above)
-└── emissions/
-    ├── emissions_5class_train.csv
-    ├── emissions_5class_test.csv
-    ├── emissions_3class_train.csv
-    └── emissions_3class_test.csv
+├── distilbert_5class_final/          # 255 MB model.safetensors + tokenizer + metrics
+├── distilbert_3class_final/          # same structure
+├── emissions/
+│   ├── emissions_5class_train.csv
+│   ├── emissions_5class_test.csv
+│   ├── emissions_3class_train.csv
+│   └── emissions_3class_test.csv
+└── comparison/
+    ├── task_a_comparison.csv
+    ├── task_b_comparison.csv
+    ├── kappa_matrix_5class.csv
+    ├── kappa_vs_truth.json
+    └── test_set_predictions_all_models.csv   # every model's prediction on every test row
 ```
 
-### Changing the Dataset Path
+That last file is the one to open if you want to check any number in this README yourself.
 
-If your CSV is in a different Drive location, update this variable in Step 3:
+### Changing the dataset path
+
+Update in Step 3:
 ```python
 CSV_PATH = "/content/drive/MyDrive/Colab Notebooks/DistilBERT/MHARD_dataset.csv"
 ```
@@ -573,18 +409,14 @@ CSV_PATH = "/content/drive/MyDrive/Colab Notebooks/DistilBERT/MHARD_dataset.csv"
 
 ```
 .
-├── README.md                                           # This file
-├── Reducing_AI_Carbon_Footprint_A_Study_of_DistilBERT_for_Mental_Health_Sentiment_Analysis.ipynb
-│                                                       # Full training and evaluation notebook
-├── requirements.txt                                    # Python dependencies
-└── emissions/                                          # (generated) CodeCarbon CSV logs
-    ├── emissions_5class_train.csv
-    ├── emissions_5class_test.csv
-    ├── emissions_3class_train.csv
-    └── emissions_3class_test.csv
+├── README.md                              # This file
+├── Carbon_Aware_Sentiment_Analysis_at_Scale.ipynb
+│                                          # Full pipeline, 17 steps, outputs included
+├── requirements.txt                       # Python dependencies
+└── emissions/                             # CodeCarbon CSV logs
 ```
 
-The trained model weights are **not included** in this repository due to file size (~250 MB per model). They are saved to Google Drive during training. If you wish to use the pre-trained models without retraining, they can be hosted on HuggingFace Hub — contact the author.
+Trained weights are **not included** (255 MB per model). They are written to Drive during training.
 
 ---
 
@@ -605,39 +437,28 @@ wordcloud>=1.9.0
 codecarbon>=2.3.0
 ```
 
-Install all dependencies with:
-```bash
-pip install transformers datasets evaluate accelerate scikit-learn wordcloud codecarbon
-```
-
-Or use the full pinned requirements file:
-```bash
-pip install -r requirements.txt
-```
-
-**Note on `transformers` version:** This notebook uses `processing_class=tokenizer` in Trainer (the updated argument name from `transformers>=4.46`). If you are using an older version, replace `processing_class=` with `tokenizer=` in Steps 13 and 15.
+**Note on `transformers` version:** the notebook uses `processing_class=tokenizer` in `Trainer`, the updated argument name from `transformers>=4.46`. On older versions, replace with `tokenizer=` in Steps 13 and 15.
 
 ---
 
 ## Citation
 
-If you use this work, the notebook, or any part of the methodology, please cite:
-
 ```bibtex
-@misc{lemeke2025distilbert_mhard,
-  title  = {Reducing AI Carbon Footprint: A Study of DistilBERT for 
-             Mental Health Sentiment Analysis},
+@misc{lemeke2026distilbert_mhard,
+  title  = {Reducing AI Carbon Footprint: A Study of DistilBERT for
+            Mental Health Sentiment Analysis},
   author = {Lemeke, Collins},
-  year   = {2025},
-  note   = {MSc Artificial Intelligence Dissertation, 
+  year   = {2026},
+  note   = {MSc Artificial Intelligence Dissertation,
             University of Greater Manchester.
-            Centre for Intelligence of Things (CIoTh).
+            Centre of Intelligence of Things (CIoTh).
             Supervisor: Prof. Celestine Iwendi.},
-  url    = {https://github.com/[your-github-username]/[repo-name]}
+  url    = {https://github.com/CollinsLemeke/DistilBERT-vs-Frontier-LLMs}
 }
 ```
 
 The MHARD dataset should be cited as:
+
 ```bibtex
 @inproceedings{wang2025mhard,
   title     = {MHARD: Mental Health App Reviews Dataset},
@@ -651,12 +472,31 @@ The MHARD dataset should be cited as:
 
 ## Author
 
-**Collins Lemeke**  
-MSc Artificial Intelligence, University of Greater Manchester  
-AI Research @ Centre for Intelligence of Things (CIoTh)
-Co-founder, AI Nexus Society @ UGM  
-IEEE Member
+**Collins Lemeke** — full pipeline design, implementation, training, evaluation and analysis.
 
-📧 For questions about this work, feel free to open an issue or reach out via GitHub.
+MSc Artificial Intelligence (Distinction), University of Greater Manchester. AI Research Engineer, Centre of Intelligence of Things. Co-founder, AI Nexus Society. IEEE Member.
+
+This is part of a wider research programme on reading internal state from observable signals — across facial expression, physiological sensing, gait and language:
+
+- [Facial Expression Recognition with CNN](https://github.com/CollinsLemeke/Facial-Expression-Recognition-Model) — imbalance-aware evaluation on FER2013
+- [Autism Facial Emotion Classification](https://github.com/CollinsLemeke/Autism-Facial-Emotion-Classification) — VGG16 transfer learning, published at IEEE IC3ECSBHI 2026
+- [Detecting Cognitive Decline, Falls and Frailty](https://github.com/CollinsLemeke/Detecting-Cognitive-Decline-Falls-and-Frailty) — interpretable screening from gait sensor data
+
+The thread connecting them is the same one running through this project: a headline number is not a result until you know which class it is hiding.
+
+- [GitHub](https://github.com/CollinsLemeke)
+- [Kaggle](https://www.kaggle.com/collinslemeke/code)
+
+For questions, open an issue.
 
 ---
+
+## License
+
+**Code: MIT.** Free to use, modify, and distribute. See [LICENSE](LICENSE).
+
+**Data:** MHARD belongs to its original authors and is not redistributed here. Refer to Wang et al. (ICWSM 2025) for terms.
+
+---
+
+> *67 million parameters. Five and a half minutes. Thirteen grams of CO₂. Second place on macro F1, ahead of GPT-4.*
