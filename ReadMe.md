@@ -7,7 +7,9 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.x-orange)](https://pytorch.org/)
 [![HuggingFace](https://img.shields.io/badge/🤗-Transformers-yellow)](https://huggingface.co/transformers)
+[![DistilBERT](https://img.shields.io/badge/Model-distilbert--base--uncased-FFD21E)](https://huggingface.co/distilbert/distilbert-base-uncased)
 [![CodeCarbon](https://img.shields.io/badge/🌱-CodeCarbon-green)](https://codecarbon.io/)
+[![Dataset](https://img.shields.io/badge/Dataset-MHARD-blueviolet)](https://github.com/Sensify-Lab/MHARD)
 [![Task B Accuracy](https://img.shields.io/badge/3--class%20Accuracy-88.35%25-success)](#results)
 [![Macro F1](https://img.shields.io/badge/3--class%20Macro%20F1-0.734%20(2nd%20of%208)-success)](#the-ranking-flips-depending-on-the-metric)
 [![Training CO2](https://img.shields.io/badge/Training%20CO₂-13.3%20g-brightgreen)](#carbon-efficiency-analysis)
@@ -21,6 +23,7 @@
 - [Motivation and Research Question](#motivation-and-research-question)
 - [Headline Results](#headline-results)
 - [Dataset: MHARD](#dataset-mhard)
+- [Model: DistilBERT](#model-distilbert)
 - [Experimental Design](#experimental-design)
 - [Project Architecture and Pipeline](#project-architecture-and-pipeline)
 - [Key Design Decisions and Justifications](#key-design-decisions-and-justifications)
@@ -35,7 +38,7 @@
 - [How to Reproduce](#how-to-reproduce)
 - [Repository Structure](#repository-structure)
 - [Dependencies](#dependencies)
-- [Citation](#citation)
+- [Citations and Acknowledgements](#citations-and-acknowledgements)
 - [Author](#author)
 - [License](#license)
 
@@ -43,16 +46,16 @@
 
 ## Overview
 
-This project fine-tunes **DistilBERT** (`distilbert-base-uncased`, 66,955,779 parameters) for automated sentiment analysis of mental health app reviews, and benchmarks it against **seven frontier Large Language Models** whose predictions come bundled in the MHARD dataset: GPT-3.5 Instruct, GPT-3.5 Turbo, GPT-4, Gemini 1.5 Flash, Gemini 1.5 Pro, LLaMA 3.1 8B, and LLaMA 3.3 70B.
+This project fine-tunes **DistilBERT** ([Sanh et al., 2019](#model-and-tooling)) — specifically `distilbert-base-uncased`, 66,955,779 parameters — for automated sentiment analysis of mental health app reviews, and benchmarks it against **seven frontier Large Language Models** whose predictions ship with the **MHARD** dataset ([Wang et al., ICWSM 2025](#dataset)): GPT-3.5 Instruct, GPT-3.5 Turbo, GPT-4, Gemini 1.5 Flash, Gemini 1.5 Pro, LLaMA 3.1 8B, and LLaMA 3.3 70B.
 
 Two classification heads are trained from the same encoder:
 
 - **Task A** — 5-class ordinal rating prediction (predict the exact 1–5 star rating)
 - **Task B** — 3-class sentiment classification (negative / neutral / positive)
 
-Carbon emissions during both training and inference are measured with **CodeCarbon**, which turns the environmental argument from a claim into a measurement.
+Carbon emissions during both training and inference are measured with **CodeCarbon** ([Courty et al.](#model-and-tooling)), which turns the environmental argument from a claim into a measurement.
 
-Every model is evaluated on **the identical 20,082 held-out reviews**. The LLM predictions ship with the dataset, so the comparison is a genuine head-to-head rather than a comparison against published numbers from different test sets.
+Every model is evaluated on **the identical 20,082 held-out reviews**. Because the LLM predictions come bundled with the dataset, this is a genuine head-to-head rather than a comparison against published numbers from different test sets.
 
 This notebook constitutes the empirical core of the MSc dissertation *"Reducing AI Carbon Footprint: A Study of DistilBERT for Mental Health Sentiment Analysis"*.
 
@@ -89,17 +92,27 @@ On the 5-class task, DistilBERT's macro F1 of **0.5664** sits **0.0012 below GPT
 
 ## Dataset: MHARD
 
-**Name:** MHARD — Mental Health App Reviews Dataset
-**Source:** Wang et al., ICWSM 2025
-**Raw size:** 200,972 user reviews
-**Coverage:** 73 mental health applications on the Google Play Store
-**Time range:** 2011 to 2023
+**MHARD — Mental Health App Reviews Dataset**
+**Authors:** Wang, Erqsous, Khatiwada, Karwankar, Alhassan, Chandrasekaran, Abraham, Lovell, Ngo & Mauriello — University of Delaware
+**Paper:** *Leveraging Large Language Models for Review Classification and Rating Estimation of Mental Health Applications*, ICWSM 2025, 19(1), 2017–2029. [DOI: 10.1609/icwsm.v19i1.35916](https://doi.org/10.1609/icwsm.v19i1.35916)
+**Repository:** [github.com/Sensify-Lab/MHARD](https://github.com/Sensify-Lab/MHARD) (MIT licence)
+**Size:** 200,973 reviews across 73 mental health apps, March 2011 to July 2023
 
-Each row contains the review text, the ground-truth star rating given by the user, and predicted ratings from seven LLMs — which is what makes the head-to-head possible.
+Full credit for collection, annotation and the LLM prediction runs belongs to the MHARD authors. This project contributes only the fine-tuned DistilBERT models, the carbon measurement, and the comparative analysis. **Cite MHARD if you use it** — see [Citations](#citations-and-acknowledgements).
+
+Each row contains the review text, the ground-truth star rating given by the user, and predicted ratings from seven LLMs — which is what makes the head-to-head possible without re-running any API calls.
+
+> **A note on row counts.** The MHARD paper reports 200,973 reviews; the CSV read into this notebook returned 200,972. A single-row discrepancy, most likely a header or export artefact. It has no bearing on any result here.
+
+### The MHARD authors' own finding
+
+The original paper reports that their best supervised learning method achieved an F1-score of **0.79** while requiring significantly more human effort, whereas GPT-4 and Gemini 1.5 Pro delivered strong out-of-the-box performance at an overall F1-score of **0.76**.
+
+That framing — supervised fine-tuning wins on quality but costs human effort — is the starting point this project pushes on. The question here is what that fine-tuning costs in *carbon and compute*, and whether the effort is justified once you measure it. (Metric definitions differ between the two papers, so treat the 0.79 as context rather than a directly comparable number to the figures below.)
 
 ### Class Distribution
 
-The dataset has a strong positive skew, a structural feature of app review data where satisfied users are more motivated to write:
+The dataset has a strong positive skew, a structural feature of app review data known as the J-curve, where satisfied and very dissatisfied users are most motivated to write:
 
 | Rating | Test-set count | Share |
 |--------|---------------|-------|
@@ -108,6 +121,8 @@ The dataset has a strong positive skew, a structural feature of app review data 
 | 3-star | 1,110 | 5.5% |
 | 4-star | 2,509 | 12.5% |
 | 5-star | 12,114 | 60.3% |
+
+These proportions match those reported in the MHARD paper for the full corpus, confirming the split preserved the distribution.
 
 Collapsed to three classes: negative 4,349 (21.7%), neutral 1,110 (5.5%), positive 14,623 (72.8%).
 
@@ -124,7 +139,28 @@ Collapsed to three classes: negative 4,349 (21.7%), neutral 1,110 (5.5%), positi
 | Test | **20,082** |
 | **Total** | **200,812** |
 
-Roughly 160 rows were removed from the raw 200,972: null reviews, empty-after-normalisation rows, and reviews under three words.
+Roughly 160 rows were removed from the raw file: null reviews, empty-after-normalisation rows, and reviews under three words.
+
+### Missing LLM predictions
+
+The MHARD repository documents this directly: some LLM predictions are missing because the models returned unexpected outputs during the original experiments — bracketed numbers, lengthy explanations, or error messages instead of a parseable rating.
+
+That is not a flaw in the dataset; it is an honest record of what running frontier models at scale actually looks like, and it becomes a finding in its own right in the [results](#where-it-fails).
+
+---
+
+## Model: DistilBERT
+
+**`distilbert-base-uncased`** — 66,955,779 parameters, six transformer layers, from the Hugging Face Hub.
+
+DistilBERT ([Sanh et al., 2019](#model-and-tooling)) is a distilled version of BERT ([Devlin et al., 2019](#model-and-tooling)): roughly 40% smaller and 60% faster, retaining approximately 97% of BERT's language understanding on the GLUE benchmark. It was produced through knowledge distillation during pretraining, with the smaller student network trained to reproduce the teacher's output distribution.
+
+That design goal is the reason this project uses it. The model was built to answer the same question this dissertation asks — how much capability survives compression — and it is a natural candidate when the argument is about efficiency rather than raw capability.
+
+All training uses the Hugging Face `transformers` library ([Wolf et al., 2020](#model-and-tooling)), with `DistilBertForSequenceClassification` and a custom `Trainer` subclass for the class-weighted loss.
+
+- Model card: [huggingface.co/distilbert/distilbert-base-uncased](https://huggingface.co/distilbert/distilbert-base-uncased)
+- Licence: Apache 2.0
 
 ---
 
@@ -145,6 +181,8 @@ Both tasks use the **same** stratified split, the **same** tokenisation, and the
 | Cohen's κ | Agreement between DistilBERT and each LLM |
 | CO₂eq | Emissions for training and inference, via CodeCarbon |
 | Latency / throughput | Operational efficiency |
+
+All classification metrics computed with scikit-learn ([Pedregosa et al., 2011](#model-and-tooling)).
 
 ---
 
@@ -225,7 +263,7 @@ All figures read from the stored outputs of the notebook committed to this repos
 
 ### Head to Head, Task A — 5-class rating
 
-All models on the identical 20,082 test rows. Sorted by accuracy.
+All models on the identical 20,082 test rows. LLM predictions from MHARD. Sorted by accuracy.
 
 | Model | n evaluated | n missing | Accuracy | Weighted F1 | Macro F1 | MAE |
 |---|---|---|---|---|---|---|
@@ -309,7 +347,9 @@ The same shape appears on Task A, where 2-star (0.3820) and 3-star (0.3729) are 
 
 **Qualitative check.** On 50 random test reviews (seed 42): 36 correct (72.0%), 9 off by one (18.0%), **45 within ±1 (90.0%)**. The errors are near-misses on an ordinal scale, not category collapses.
 
-**The operational point about missing predictions.** DistilBERT returned a prediction for all 20,082 rows. The API models did not — LLaMA 3.1 8B failed on 1,039 rows (5.2%), Gemini 1.5 Flash on 223, GPT-4 on 52. In a production pipeline every one of those is a row needing a retry or a fallback. A local model has no such failure mode.
+**The operational point about missing predictions.** DistilBERT returned a prediction for all 20,082 rows. The API models did not — LLaMA 3.1 8B failed on 1,039 rows (5.2%), Gemini 1.5 Flash on 223, GPT-4 on 52.
+
+The MHARD authors document the cause: the models returned bracketed numbers, lengthy explanations, or error messages rather than a parseable rating. In a production pipeline every one of those is a row needing a retry, a fallback, or manual review — and the failures are not random, they cluster on the inputs the model found hardest to categorise. A local classification head has no such failure mode: it always returns a distribution over the label set.
 
 ---
 
@@ -363,7 +403,7 @@ What can be said precisely: each of those predictions triggered inference throug
 
 - Google Colab account (GPU runtime)
 - Google Drive with at least 2 GB free
-- MHARD dataset CSV (`MHARD_dataset.csv`) — from the authors of Wang et al., ICWSM 2025
+- MHARD dataset CSV — available from [github.com/Sensify-Lab/MHARD](https://github.com/Sensify-Lab/MHARD)
 
 ### Steps
 
@@ -441,7 +481,117 @@ codecarbon>=2.3.0
 
 ---
 
-## Citation
+## Citations and Acknowledgements
+
+This project stands on three pieces of other people's work: the MHARD dataset and its LLM prediction runs, the DistilBERT model, and the Hugging Face and CodeCarbon tooling. Please cite them.
+
+### Dataset
+
+**MHARD** — Mental Health App Reviews Dataset, University of Delaware.
+Repository: [github.com/Sensify-Lab/MHARD](https://github.com/Sensify-Lab/MHARD) · Contact: Kyle Wang (kylewang@udel.edu), Moath Erqsous (merqsous@udel.edu)
+
+```bibtex
+@article{wang2025mhard,
+  title     = {Leveraging Large Language Models for Review Classification
+               and Rating Estimation of Mental Health Applications},
+  author    = {Wang, Qiaoyu and Erqsous, Moath and Khatiwada, Pallav and
+               Karwankar, Ashutosh and Alhassan, Fatimah Mohammed and
+               Chandrasekaran, Aravind and Abraham, Bettina and
+               Lovell, Fiona and Ngo, An Ai and Mauriello, Matthew Louis},
+  journal   = {Proceedings of the International AAAI Conference on
+               Web and Social Media},
+  volume    = {19},
+  number    = {1},
+  pages     = {2017--2029},
+  year      = {2025},
+  doi       = {10.1609/icwsm.v19i1.35916}
+}
+```
+
+### Model and tooling
+
+**DistilBERT** — the model fine-tuned throughout this project.
+Model card: [huggingface.co/distilbert/distilbert-base-uncased](https://huggingface.co/distilbert/distilbert-base-uncased) · Apache 2.0
+
+```bibtex
+@article{sanh2019distilbert,
+  title   = {DistilBERT, a distilled version of BERT: smaller, faster,
+             cheaper and lighter},
+  author  = {Sanh, Victor and Debut, Lysandre and Chaumond, Julien and
+             Wolf, Thomas},
+  journal = {arXiv preprint arXiv:1910.01108},
+  year    = {2019},
+  note    = {5th Workshop on Energy Efficient Machine Learning and
+             Cognitive Computing, NeurIPS 2019}
+}
+```
+
+**BERT** — the teacher model DistilBERT was distilled from.
+
+```bibtex
+@inproceedings{devlin2019bert,
+  title     = {{BERT}: Pre-training of Deep Bidirectional Transformers
+               for Language Understanding},
+  author    = {Devlin, Jacob and Chang, Ming-Wei and Lee, Kenton and
+               Toutanova, Kristina},
+  booktitle = {Proceedings of NAACL-HLT 2019},
+  pages     = {4171--4186},
+  year      = {2019}
+}
+```
+
+**Hugging Face Transformers** — the library used for tokenisation, training and inference.
+
+```bibtex
+@inproceedings{wolf2020transformers,
+  title     = {Transformers: State-of-the-Art Natural Language Processing},
+  author    = {Wolf, Thomas and Debut, Lysandre and Sanh, Victor and
+               Chaumond, Julien and Delangue, Clement and Moi, Anthony and
+               Cistac, Pierric and Rault, Tim and Louf, R{\'e}mi and
+               Funtowicz, Morgan and Davison, Joe and Shleifer, Sam and
+               von Platen, Patrick and Ma, Clara and Jernite, Yacine and
+               Plu, Julien and Xu, Canwen and Le Scao, Teven and
+               Gugger, Sylvain and Drame, Mariama and Lhoest, Quentin and
+               Rush, Alexander M.},
+  booktitle = {Proceedings of the 2020 Conference on Empirical Methods in
+               Natural Language Processing: System Demonstrations},
+  pages     = {38--45},
+  year      = {2020},
+  publisher = {Association for Computational Linguistics}
+}
+```
+
+**CodeCarbon** — emissions tracking.
+Repository: [github.com/mlco2/codecarbon](https://github.com/mlco2/codecarbon)
+
+```bibtex
+@software{codecarbon,
+  title  = {CodeCarbon: Estimate and Track Carbon Emissions from
+            Machine Learning Computing},
+  author = {Courty, Beno{\^i}t and Schmidt, Victor and
+            Luccioni, Sasha and others},
+  url    = {https://github.com/mlco2/codecarbon}
+}
+```
+
+**scikit-learn** — all classification metrics and class-weight computation.
+
+```bibtex
+@article{pedregosa2011scikit,
+  title   = {Scikit-learn: Machine Learning in {P}ython},
+  author  = {Pedregosa, F. and Varoquaux, G. and Gramfort, A. and
+             Michel, V. and Thirion, B. and Grisel, O. and Blondel, M. and
+             Prettenhofer, P. and Weiss, R. and Dubourg, V. and
+             Vanderplas, J. and Passos, A. and Cournapeau, D. and
+             Brucher, M. and Perrot, M. and Duchesnay, E.},
+  journal = {Journal of Machine Learning Research},
+  volume  = {12},
+  pages   = {2825--2830},
+  year    = {2011}
+}
+```
+
+### This work
 
 ```bibtex
 @misc{lemeke2026distilbert_mhard,
@@ -454,17 +604,6 @@ codecarbon>=2.3.0
             Centre of Intelligence of Things (CIoTh).
             Supervisor: Prof. Celestine Iwendi.},
   url    = {https://github.com/CollinsLemeke/DistilBERT-vs-Frontier-LLMs}
-}
-```
-
-The MHARD dataset should be cited as:
-
-```bibtex
-@inproceedings{wang2025mhard,
-  title     = {MHARD: Mental Health App Reviews Dataset},
-  author    = {Wang et al.},
-  booktitle = {Proceedings of ICWSM 2025},
-  year      = {2025}
 }
 ```
 
@@ -495,7 +634,9 @@ For questions, open an issue.
 
 **Code: MIT.** Free to use, modify, and distribute. See [LICENSE](LICENSE).
 
-**Data:** MHARD belongs to its original authors and is not redistributed here. Refer to Wang et al. (ICWSM 2025) for terms.
+**Dataset:** MHARD is released by its authors under the MIT licence and is **not redistributed here**. Obtain it from [github.com/Sensify-Lab/MHARD](https://github.com/Sensify-Lab/MHARD) and cite Wang et al. (2025).
+
+**Model:** `distilbert-base-uncased` is released under Apache 2.0 by Hugging Face. Fine-tuned weights derived from it inherit that licence.
 
 ---
 
