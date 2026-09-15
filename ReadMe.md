@@ -117,7 +117,7 @@ Macro F1 closes that loophole. It scores each class separately and then averages
 | Agreement with truth (Cohen's κ) | 0.556, 4th of 8 | 0.587 (GPT-4) | −0.031 |
 | **Parameters** | **67 million** | 1.76 trillion (GPT-4, estimated) | **~26,000× smaller** |
 | **Training carbon** | **13.3 g CO₂, both models** | Not published | Not comparable |
-| **Inference carbon** | **0.0030 mg per prediction, measured** | Estimated at 90 to 3,300 mg | 4 to 6 orders of magnitude |
+| **Inference carbon** | **0.0041 mg per prediction, measured** | Estimated at 90 to 3,300 mg | 4 to 6 orders of magnitude |
 | Throughput | 12,300 reviews per second, locally | Limited by API rate limits | Not comparable |
 | **Failed predictions** | **0 of 20,082** | Up to 1,039 (LLaMA 3.1 8B) | See section 8 |
 
@@ -270,8 +270,6 @@ All numbers below are read from the stored outputs of the notebook in this repos
 
 ### Head to head, Task A (5-class)
 
-![Task A performance comparison](figures/fig03_task_a_performance_comparison.png)
-
 | Model | Evaluated | Missing | Accuracy | Weighted F1 | Macro F1 | MAE |
 |---|---|---|---|---|---|---|
 | GPT-4 | 20,030 | 52 | **0.7494** | 0.7634 | 0.5676 | **0.3130** |
@@ -286,8 +284,6 @@ All numbers below are read from the stored outputs of the notebook in this repos
 DistilBERT is 4th on accuracy but **3rd on macro F1**, and comfortably beats both GPT-3.5 variants, Gemini 1.5 Flash, and LLaMA 3.1 8B on every measure.
 
 ### Head to head, Task B (3-class)
-
-![Task B performance comparison](figures/fig04_task_b_performance_comparison.png)
 
 | Model | Evaluated | Missing | Accuracy | Weighted F1 | Macro F1 |
 |---|---|---|---|---|---|
@@ -351,25 +347,19 @@ LLaMA 3.3 70B tops the accuracy table and finishes 6th on macro F1. DistilBERT d
 
 ### Confusion matrices
 
-**How to read these.** Each row is the true answer, each column is what the model guessed. The diagonal is correct answers. Everything off the diagonal is a mistake, and where those mistakes land tells you what the model is confusing.
+**How to read a confusion matrix.** Each row is the true answer, each column is what the model guessed. The diagonal is correct answers. Everything off the diagonal is a mistake, and where those mistakes land tells you what the model is confusing.
 
-![Task A confusion matrix](figures/fig01_task_a_confusion_matrix.png)
-
-Task A, percentage correct per true class: 1-star **73.7%**, 2-star **48.5%**, 3-star **47.3%**, 4-star **52.5%**, 5-star **79.4%**.
+**Task A, percentage correct per true class:** 1-star **73.7%**, 2-star **48.5%**, 3-star **47.3%**, 4-star **52.5%**, 5-star **79.4%**.
 
 The errors sit almost entirely next to the diagonal. True 4-star reviews are called 5-star 26.0% of the time and 3-star 17.8% of the time. True 2-star reviews go to 1-star 21.9% and 3-star 25.2%. The model is not confusing delight with fury. It is struggling to place reviews precisely on a scale where humans are also imprecise.
 
-![Task B confusion matrix](figures/fig02_task_b_confusion_matrix.png)
-
-Task B, percentage correct per true class: negative **85.6%**, neutral **57.1%**, positive **91.5%**.
+**Task B, percentage correct per true class:** negative **85.6%**, neutral **57.1%**, positive **91.5%**.
 
 The single largest error cell is 1,015 truly positive reviews labelled neutral. That is the weighted loss doing exactly what it was told: reach hard for the rare neutral class, and accept some false positives as the price.
 
 ### Do the models agree with each other?
 
 Cohen's κ measures agreement after stripping out the agreement you would get from luck.
-
-![Cohen's kappa agreement](figures/fig05_cohen_kappa_agreement.png)
 
 **Agreement with the actual user-given rating, 5-class:**
 
@@ -408,7 +398,7 @@ DistilBERT's emissions were **measured** with CodeCarbon, which tracks CPU, GPU,
 
 **Training both models cost about 13.3 g of CO₂, roughly the emissions of boiling a small cup of water.** That is a one-off cost. Every prediction afterwards is close to free.
 
-> **A note on the per-prediction figure.** The carbon charts below are plotted at **0.0030 mg CO₂ per prediction**. The notebook's stored per-task output records **0.0041 mg**. The two come from separate measurement runs, both are the same order of magnitude, and no conclusion changes either way. The multipliers in the charts follow the 0.0030 figure. If you reproduce this, use whatever CodeCarbon reports on your own hardware.
+> **A note on the per-prediction figure.** All carbon numbers below use **0.0041 mg CO₂ per prediction**, measured by CodeCarbon in the run stored in this notebook (0.00413 mg on Task A, 0.00408 mg on Task B). An earlier training run measured 0.0030 mg on different hardware. Emissions depend on the GPU you get and the carbon intensity of your local grid, so expect your own figure to differ. The model quality numbers are unaffected, since they do not depend on hardware.
 
 ### The comparison, and what kind of number it is
 
@@ -416,32 +406,39 @@ DistilBERT's emissions were **measured** with CodeCarbon, which tracks CPU, GPU,
 
 The per-prediction LLM figures below are therefore **estimates**, derived from published energy-per-query figures and parameter-count scaling rather than from instrumentation. They should be read as **order-of-magnitude indicators**, and the source of the estimates must be cited wherever these figures are reused.
 
-> ⚠️ **Before publishing or submitting:** replace this paragraph with the explicit citation for the per-query energy estimates used to build figures 6 to 9. Parameter counts marked with an asterisk in the charts are widely-cited estimates, not officially disclosed figures.
+> ⚠️ **Before publishing or submitting:** replace this paragraph with the explicit citation for the per-query energy estimates used in this section. Parameter counts marked with an asterisk are widely-cited estimates, not officially disclosed figures.
 
 ### Per-prediction carbon
 
-![Per-prediction emissions](figures/fig06_per_prediction_emissions.png)
-
 | Model | mg CO₂ per prediction | Relative to DistilBERT |
 |---|---|---|
-| GPT-4 (1.76T*) | 3,300 (estimated) | 1,093,937× |
-| Gemini 1.5 Pro (175B*) | 1,500 (estimated) | 497,244× |
-| LLaMA 3.3 70B (70B) | 980 (estimated) | 324,866× |
-| GPT-3.5 Instruct (175B) | 820 (estimated) | 271,827× |
-| GPT-3.5 Turbo (20B*) | 220 (estimated) | 72,929× |
-| LLaMA 3.1 8B (8B) | 110 (estimated) | 36,465× |
-| Gemini 1.5 Flash (8B*) | 90 (estimated) | 29,835× |
-| **DistilBERT (67M)** | **0.0030 (measured)** | **1×** |
+| GPT-4 (1.76T*) | 3,300 (estimated) | ~799,000× |
+| Gemini 1.5 Pro (175B*) | 1,500 (estimated) | ~363,000× |
+| LLaMA 3.3 70B (70B) | 980 (estimated) | ~237,000× |
+| GPT-3.5 Instruct (175B) | 820 (estimated) | ~199,000× |
+| GPT-3.5 Turbo (20B*) | 220 (estimated) | ~53,000× |
+| LLaMA 3.1 8B (8B) | 110 (estimated) | ~27,000× |
+| Gemini 1.5 Flash (8B*) | 90 (estimated) | ~22,000× |
+| **DistilBERT (67M)** | **0.0041 (measured)** | **1×** |
 
 ### The performance versus carbon trade-off
 
-![Efficient frontier](figures/fig07_efficient_frontier.png)
+Put quality and carbon side by side and the picture is stark. **What you want is high quality at low carbon.**
 
-This chart puts quality on the vertical axis and carbon on the horizontal axis, on a log scale. **The top-left corner is where you want to be: high quality, low carbon.** DistilBERT sits alone there on both tasks, while every LLM clusters on the right at four to six orders of magnitude more carbon per prediction, for quality that is comparable rather than dramatically better.
+| Model | Macro F1 (3-class) | mg CO₂ per prediction |
+|---|---|---|
+| Gemini 1.5 Pro | 0.7473 | 1,500 |
+| **DistilBERT (67M)** | **0.7338** | **0.0041** |
+| GPT-4 | 0.7302 | 3,300 |
+| GPT-3.5 Instruct | 0.7299 | 820 |
+| GPT-3.5 Turbo | 0.7099 | 220 |
+| LLaMA 3.3 70B | 0.7065 | 980 |
+| Gemini 1.5 Flash | 0.6646 | 90 |
+| LLaMA 3.1 8B | 0.5690 | 110 |
+
+Read the two columns together. The quality column spans a narrow range, from 0.57 to 0.75. The carbon column spans **six orders of magnitude**. DistilBERT sits near the top of the first column and at the very bottom of the second, which is the only place in this table you would actually want to be.
 
 ### Total carbon to process the whole dataset
-
-![Total dataset emissions](figures/fig08_total_dataset_emissions.png)
 
 This is the number that makes the abstract comparison concrete.
 
@@ -454,17 +451,26 @@ This is the number that makes the abstract comparison concrete.
 | GPT-3.5 Turbo | 4,418.04 g | 44.18 kg |
 | LLaMA 3.1 8B | 2,209.02 g | 22.09 kg |
 | Gemini 1.5 Flash | 1,807.38 g | 18.07 kg |
-| **DistilBERT** | **0.06 g** | **0.61 g** |
+| **DistilBERT** | **0.083 g** | **0.83 g** |
 
-Classifying all 200,812 reviews costs DistilBERT about **0.61 grams**, less than a twentieth of what it cost to train it. The estimate for GPT-4 on the same job is **662.68 kilograms**, roughly a million times more.
+Classifying all 200,812 reviews costs DistilBERT about **0.83 grams**, roughly a sixteenth of what it cost to train it. The estimate for GPT-4 on the same job is around **660 kilograms**, close to a million times more.
 
 ### Quality per unit of carbon
 
-![Carbon efficiency index](figures/fig09_efficiency_index.png)
+Divide macro F1 by carbon and you get a single efficiency number: how much quality you get per unit of emissions. DistilBERT is normalised to 1.0, so every other figure reads as a fraction of it.
 
-This chart divides macro F1 by carbon, answering "how much quality do you get per unit of emissions", with DistilBERT normalised to 1.0. Every LLM lands between **9.2e-07×** (GPT-4) and **3.0e-05×** (Gemini 1.5 Flash) of DistilBERT's efficiency on the 5-class task, with near-identical figures on the 3-class task.
+| Model | Efficiency, Task A | Efficiency, Task B |
+|---|---|---|
+| **DistilBERT (67M)** | **1.00×** | **1.00×** |
+| Gemini 1.5 Flash | 0.0000395× | 0.0000411× |
+| LLaMA 3.1 8B | 0.0000235× | 0.0000288× |
+| GPT-3.5 Turbo | 0.0000171× | 0.0000180× |
+| GPT-3.5 Instruct | 0.00000487× | 0.00000495× |
+| LLaMA 3.3 70B | 0.00000412× | 0.00000401× |
+| Gemini 1.5 Pro | 0.00000281× | 0.00000277× |
+| GPT-4 | 0.00000125× | 0.00000123× |
 
-Read plainly: **on this task, the frontier models deliver somewhere between one thirty-thousandth and one millionth of the quality-per-gram that the small model does.**
+Read plainly: **on this task, the frontier models deliver somewhere between one twenty-five-thousandth and one eight-hundred-thousandth of the quality-per-gram that the small model does.** The two tasks give almost identical figures, which is a good sign that the pattern is not a quirk of one experiment.
 
 ### The argument that is arguably stronger than carbon
 
@@ -514,7 +520,7 @@ Please read this section before citing any number above.
 - **The neutral class is weak.** F1 0.3863, precision 0.2919. If your application depends on identifying ambivalent users specifically, this model is not adequate as it stands. Threshold tuning, focal loss, or a dedicated ordinal-regression head are the obvious next steps.
 - **Single run, single seed.** Seed 42 throughout, so the run is reproducible. Reproducible is not the same as representative. A mean and standard deviation across several seeds would be a much stronger claim, and is the highest-value next experiment.
 - **LLM emissions are estimated, not measured.** See the warning in section 7. The carbon comparison is directional. The exact multipliers should not be quoted as measurements.
-- **Two carbon measurement runs disagree slightly** on per-prediction emissions (0.0030 mg versus 0.0041 mg). Reconcile these before publication.
+- **Carbon figures are hardware-specific.** An earlier run of this same pipeline measured 0.0030 mg per prediction against the 0.0041 mg reported here. Nothing changed in the model, only the machine it ran on. Treat any single carbon figure as a measurement of one run on one GPU, not a property of the model.
 - **The LLM predictions are pre-computed** by the MHARD authors. Their prompting strategy, temperature, and output parsing are fixed and not controlled by this work. Different prompts could produce different LLM results, and a fairer comparison would re-run them under controlled prompting.
 - **One domain, one language.** Mental health app reviews from Google Play, English only, 2011 to 2023. Transfer to other review domains or languages is untested.
 - **The ground truth is itself noisy.** The "correct" answer is the star rating the user selected, which is a rough proxy for sentiment. Users routinely write glowing text and leave 3 stars, or the reverse. Part of the residual error on **every** model here is irreducible.
@@ -576,16 +582,6 @@ CSV_PATH = "/content/drive/MyDrive/Colab Notebooks/DistilBERT/MHARD_dataset.csv"
 ├── LICENSE
 ├── Carbon_Aware_Sentiment_Analysis_at_Scale.ipynb   # full pipeline, 17 steps, outputs included
 ├── requirements.txt
-├── figures/
-│   ├── fig01_task_a_confusion_matrix.png
-│   ├── fig02_task_b_confusion_matrix.png
-│   ├── fig03_task_a_performance_comparison.png
-│   ├── fig04_task_b_performance_comparison.png
-│   ├── fig05_cohen_kappa_agreement.png
-│   ├── fig06_per_prediction_emissions.png
-│   ├── fig07_efficient_frontier.png
-│   ├── fig08_total_dataset_emissions.png
-│   └── fig09_efficiency_index.png
 └── emissions/                                       # CodeCarbon CSV logs
 ```
 
@@ -740,10 +736,6 @@ Released under the **MIT Licence**. You may use, copy, modify, and distribute it
 ### Model
 
 `distilbert-base-uncased` is released under **Apache 2.0** by Hugging Face. Fine-tuned weights derived from it inherit that licence.
-
-### Figures
-
-The figures in `figures/` are part of this work and fall under the MIT Licence alongside the code. Please attribute if reused.
 
 ---
 
